@@ -13,13 +13,15 @@ import Search from './pages/Search'
 import Showtime from './pages/Showtime'
 import Tickets from './pages/Tickets'
 import User from './pages/User'
+import ChatWidget from './components/ChatWidget' // ✅ NEW
+import { ChatProvider } from './context/ChatContext' // ✅ NEW
 
 axios.defaults.baseURL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000'
 axios.defaults.withCredentials = true
 
 function App() {
 	return (
-		<>
+		<ChatProvider> {/* ✅ NEW: Wrap with ChatProvider */}
 			<ToastContainer />
 			<Routes>
 				<Route path="/" element={<Home />} />
@@ -55,7 +57,8 @@ function App() {
 					}
 				/>
 			</Routes>
-		</>
+			<ChatWidget /> {/* ✅ NEW: Floating chat widget */}
+		</ChatProvider>
 	)
 }
 
