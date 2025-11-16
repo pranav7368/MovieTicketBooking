@@ -138,11 +138,18 @@ exports.addShowtime = async (req, res, next) => {
 	}
 }
 
-//@desc     Purchase seats
+//@desc     Purchase seats (DEPRECATED - Use /payment/process instead)
 //@route    POST /showtime/:id
 //@access   Private
 exports.purchase = async (req, res, next) => {
 	try {
+		// This endpoint is deprecated - redirect users to use payment system
+		return res.status(400).json({
+			success: false,
+			message: 'Direct purchase is no longer supported. Please use the payment system at /payment/create-order'
+		})
+
+		/* OLD CODE - Commented out for reference
 		const { seats } = req.body
 		const user = req.user
 
@@ -194,6 +201,7 @@ exports.purchase = async (req, res, next) => {
 		)
 
 		res.status(200).json({ success: true, data: updatedShowtime, updatedUser })
+		*/
 	} catch (err) {
 		console.log(err)
 		res.status(400).json({ success: false, message: err })
