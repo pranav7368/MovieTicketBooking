@@ -18,21 +18,12 @@ import { AuthContext } from "../context/AuthContext";
 const ChatPopup = () => {
   const navigate = useNavigate();
   const { auth } = useContext(AuthContext);
-  const { messages, addMessage, toggleChat } = useContext(ChatContext); // ✅ ADD toggleChat
+  const { messages, addMessage, toggleChat } = useContext(ChatContext);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [selectedSeats, setSelectedSeats] = useState([]);
   const [currentShowtime, setCurrentShowtime] = useState(null);
   const messagesEndRef = useRef(null);
-
-  // ✅ ADD: Debug auth state
-  useEffect(() => {
-    console.log("Auth State:", {
-      isLoggedIn: !!auth.user,
-      user: auth.user,
-      token: auth.token,
-    });
-  }, [auth]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -46,9 +37,7 @@ const ChatPopup = () => {
     if (messages.length === 0) {
       addMessage({
         role: "assistant",
-        content: `🎬 Hello${
-          auth.user ? ` ${auth.user.username}` : ""
-        }! I'm your AI movie assistant!\n\nI can help you:\n• 🎥 Browse movies\n• 🎫 Book tickets instantly\n• 📅 Check showtimes\n• ⭐ Get recommendations\n\nWhat would you like to do?`,
+        content: `🎬 Hello${auth.username ? ` ${auth.username}` : ""}! I'm your AI movie assistant!\n\nI can help you:\n• 🎥 Browse all movies\n• 🎫 Book tickets (complete booking in chat!)\n• 📅 Check showtimes\n• ⭐ Get recommendations\n• 💰 Check pricing\n• 🎫 View your tickets\n\nWhat would you like to do?`,
         type: "text",
       });
     }
@@ -65,8 +54,9 @@ const ChatPopup = () => {
     try {
       const response = await axios.post("/api/chat", {
         message: userMessage,
-        userId: auth.user?._id,
-        isLoggedIn: !!auth.user,
+        userId: auth.userId,
+        isLoggedIn: !!auth.username,
+        token: auth.token
       });
 
       addMessage({
@@ -107,7 +97,7 @@ const ChatPopup = () => {
         day: "numeric",
         hour: "2-digit",
         minute: "2-digit",
-      })}`,
+      })} - ${showtime.theater}`,
       type: "seat_selection",
       data: showtime,
     });
@@ -124,7 +114,7 @@ const ChatPopup = () => {
   };
 
   const handleBookingConfirm = async () => {
-    if (!auth.user || !auth.token) {
+    if (!auth.username || !auth.token) {
       addMessage({
         role: "assistant",
         content: "🔐 Please login to complete your booking!",
@@ -161,7 +151,7 @@ const ChatPopup = () => {
         role: "assistant",
         content: `✅ Booking Created!\n\n🎬 Movie: ${
           currentShowtime.movieName
-        }\n🪑 Seats: ${selectedSeats.join(", ")}\n💰 Amount: ₹${
+        }\n📅 Date: ${new Date(currentShowtime.time).toLocaleDateString()}\n🕒 Time: ${new Date(currentShowtime.time).toLocaleTimeString()}\n🎭 Theater: ${currentShowtime.theater}\n🪑 Seats: ${selectedSeats.join(", ")}\n💰 Amount: ₹${
           orderResponse.data.order.amount
         }\n\nComplete payment below:`,
         type: "payment",
@@ -169,18 +159,17 @@ const ChatPopup = () => {
           paymentId: orderResponse.data.order.paymentId,
           amount: orderResponse.data.order.amount,
           seats: selectedSeats,
+          showtimeId: currentShowtime.showtimeId,
         },
       });
 
       setCurrentShowtime(null);
       setSelectedSeats([]);
     } catch (error) {
+      console.error("Booking error:", error);
       addMessage({
         role: "assistant",
-        content:
-          "❌ " +
-          (error.response?.data?.message ||
-            "Booking failed. Please try again."),
+        content: "❌ " + (error.response?.data?.message || "Booking failed. Please try again."),
         type: "text",
       });
     } finally {
@@ -188,12 +177,27 @@ const ChatPopup = () => {
     }
   };
 
-  const quickActions = [
-    { icon: <Film />, text: "Show all movies", query: "List all movies" },
-    { icon: <Ticket />, text: "Book a ticket", query: "Book a movie" },
-    { icon: <Clock />, text: "Check showtimes", query: "Show showtimes" },
-    { icon: <Sparkles />, text: "Recommend movie", query: "Recommend a movie" },
-  ];
+  const handlePaymentComplete = (paymentData) => {
+    addMessage({
+      role: "assistant",
+      content: `🎉 Payment Successful!\n\nYour booking is confirmed!\n\n🎬 ${currentShowtime.movieName}\n🪑 Seats: ${selectedSeats.join(", ")}\n💰 Paid: ₹${paymentData.amount}\n\nYou can view your tickets in "My Tickets" section. Enjoy your movie! 🍿`,
+      type: "text",
+    });
+    
+    // Navigate to tickets page after a delay
+    setTimeout(() => {
+      toggleChat();
+      navigate("/ticket");
+    }, 3000);
+  };
+
+  const generateSeatLayout = (seatPlan) => {
+    const rows = seatPlan?.rows || 6;
+    const columns = seatPlan?.columns || 10;
+    const rowLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'].slice(0, rows);
+    
+    return { rows: rowLetters, columns: Array.from({ length: columns }, (_, i) => i + 1) };
+  };
 
   const renderMessage = (msg, idx) => {
     // Movie List
@@ -210,7 +214,7 @@ const ChatPopup = () => {
               </p>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              {msg.data.slice(0, 6).map((movie, i) => (
+              {msg.data.map((movie, i) => (
                 <div
                   key={i}
                   className="bg-white rounded-lg overflow-hidden shadow-md hover:shadow-xl transition-all cursor-pointer group transform hover:scale-105"
@@ -288,8 +292,7 @@ const ChatPopup = () => {
 
     // Seat Selection
     if (msg.type === "seat_selection" && msg.data) {
-      const rows = ["A", "B", "C", "D", "E", "F"];
-      const seatsPerRow = 10;
+      const { rows, columns } = generateSeatLayout(msg.data.seatPlan);
 
       return (
         <div key={idx} className="flex gap-2 mb-3">
@@ -317,9 +320,8 @@ const ChatPopup = () => {
                       {row}
                     </span>
                     <div className="flex gap-1">
-                      {Array.from({ length: seatsPerRow }, (_, i) => {
-                        const seatNumber = i + 1;
-                        const seatId = `${row}${seatNumber}`;
+                      {columns.map((col) => {
+                        const seatId = `${row}${col}`;
                         const isBooked = msg.data.bookedSeats?.includes(seatId);
                         const isSelected = selectedSeats.includes(seatId);
 
@@ -330,7 +332,7 @@ const ChatPopup = () => {
                               !isBooked && handleSeatToggle(seatId)
                             }
                             disabled={isBooked}
-                            className={`w-7 h-7 rounded text-xs font-bold transition-all ${
+                            className={`w-6 h-6 rounded text-xs font-bold transition-all ${
                               isBooked
                                 ? "bg-gray-400 cursor-not-allowed text-white"
                                 : isSelected
@@ -342,7 +344,7 @@ const ChatPopup = () => {
                             {isSelected ? (
                               <Check className="w-4 h-4 mx-auto" />
                             ) : (
-                              seatNumber
+                              col
                             )}
                           </button>
                         );
@@ -421,7 +423,15 @@ const ChatPopup = () => {
               </p>
             </div>
             <button
-              onClick={() => navigate(`/purchase/${msg.data.paymentId}`)}
+              onClick={() => {
+                toggleChat();
+                navigate(`/purchase/${msg.data.showtimeId}`, {
+                  state: {
+                    selectedSeats: msg.data.seats,
+                    showtime: { _id: msg.data.showtimeId }
+                  }
+                });
+              }}
               className="w-full bg-gradient-to-r from-green-500 to-emerald-500 text-white p-4 rounded-lg font-bold hover:from-green-600 hover:to-emerald-600 transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
             >
               <CreditCard className="w-5 h-5" />
@@ -431,6 +441,7 @@ const ChatPopup = () => {
         </div>
       );
     }
+
     // Login Required
     if (msg.type === "login_required") {
       return (
@@ -444,9 +455,9 @@ const ChatPopup = () => {
             </div>
             <button
               onClick={() => {
-                toggleChat(); // ✅ Close chat first
+                toggleChat();
                 setTimeout(() => {
-                  navigate("/login"); // ✅ Then navigate
+                  navigate("/login");
                 }, 300);
               }}
               className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white p-3 rounded-lg font-bold hover:from-indigo-600 hover:to-purple-600 transition-all shadow-md"
@@ -457,30 +468,6 @@ const ChatPopup = () => {
         </div>
       );
     }
-    // Login Required
-    // if (msg.type === 'login_required') {
-    //   return (
-    //     <div key={idx} className="flex gap-2 mb-3">
-    //       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center mt-1">
-    //         <Bot className="w-5 h-5 text-white" />
-    //       </div>
-    //       <div className="flex-1">
-    //         <div className="bg-white p-3 rounded-2xl shadow-sm mb-2">
-    //           <p className="text-sm text-gray-800">{msg.content}</p>
-    //         </div>
-    //         <button
-    //           onClick={() => {
-    //             toggleChat();
-    //             navigate('/login');
-    //           }}
-    //           className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white p-3 rounded-lg font-bold hover:from-indigo-600 hover:to-purple-600 transition-all shadow-md"
-    //         >
-    //           Login / Register
-    //         </button>
-    //       </div>
-    //     </div>
-    //   );
-    // }
 
     // Regular Message
     return (
@@ -529,6 +516,13 @@ const ChatPopup = () => {
       </div>
     );
   };
+
+  const quickActions = [
+    { icon: <Film />, text: "Show all movies", query: "List all movies" },
+    { icon: <Ticket />, text: "Book a ticket", query: "Book a movie" },
+    { icon: <Clock />, text: "Check showtimes", query: "Show showtimes" },
+    { icon: <Sparkles />, text: "Recommend movie", query: "Recommend a movie" },
+  ];
 
   return (
     <div className="flex flex-col h-full bg-gradient-to-br from-purple-50 via-white to-blue-50">
