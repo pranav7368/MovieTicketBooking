@@ -3,6 +3,8 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
+import { AuthContext } from '../context/AuthContext'
+
 
 const Chat = () => {
   const navigate = useNavigate();
