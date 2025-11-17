@@ -7,19 +7,19 @@ export const ChatProvider = ({ children }) => {
   const [messages, setMessages] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Load chat history from localStorage
   useEffect(() => {
     const savedMessages = localStorage.getItem('chatHistory');
     if (savedMessages) {
       try {
-        setMessages(JSON.parse(savedMessages));
+        const parsed = JSON.parse(savedMessages);
+        setMessages(parsed);
       } catch (e) {
         console.error('Error loading chat history:', e);
+        localStorage.removeItem('chatHistory');
       }
     }
   }, []);
 
-  // Save chat history to localStorage
   useEffect(() => {
     if (messages.length > 0) {
       localStorage.setItem('chatHistory', JSON.stringify(messages));
@@ -27,7 +27,7 @@ export const ChatProvider = ({ children }) => {
   }, [messages]);
 
   const addMessage = (message) => {
-    setMessages(prev => [...prev, { ...message, timestamp: new Date() }]);
+    setMessages(prev => [...prev, { ...message, timestamp: new Date().toISOString() }]);
     if (message.role === 'assistant' && !isOpen) {
       setUnreadCount(prev => prev + 1);
     }

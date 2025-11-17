@@ -1,50 +1,54 @@
-import { MessageCircle, X, Minimize2, Maximize2, Trash2 } from 'lucide-react';
-import { useState, useContext, useEffect } from 'react';
+import { MessageCircle, X, Minimize2, Maximize2, Trash2, Move } from 'lucide-react';
+import { useState, useContext, useEffect, useRef } from 'react';
 import { ChatContext } from '../context/ChatContext';
 import ChatPopup from './ChatPopup';
 
 const ChatWidget = () => {
   const { isOpen, toggleChat, unreadCount, clearMessages } = useContext(ChatContext);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [position, setPosition] = useState({ x: window.innerWidth - 400, y: window.innerHeight - 600 });
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [position, setPosition] = useState({ x: window.innerWidth - 480, y: window.innerHeight - 730 });
   const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const dragRef = useRef({ startX: 0, startY: 0, initialX: 0, initialY: 0 });
 
   const handleMouseDown = (e) => {
-    if (e.target.closest('.chat-header')) {
+    if (e.target.closest('.drag-handle')) {
       setIsDragging(true);
-      setDragOffset({
-        x: e.clientX - position.x,
-        y: e.clientY - position.y
-      });
+      dragRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        initialX: position.x,
+        initialY: position.y
+      };
+      e.preventDefault();
     }
-  };
-
-  const handleMouseMove = (e) => {
-    if (isDragging) {
-      setPosition({
-        x: e.clientX - dragOffset.x,
-        y: e.clientY - dragOffset.y
-      });
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
   };
 
   useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (isDragging) {
+        const deltaX = e.clientX - dragRef.current.startX;
+        const deltaY = e.clientY - dragRef.current.startY;
+        
+        setPosition({
+          x: Math.max(0, Math.min(window.innerWidth - 450, dragRef.current.initialX + deltaX)),
+          y: Math.max(0, Math.min(window.innerHeight - 700, dragRef.current.initialY + deltaY))
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
     if (isDragging) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
-    } else {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
     }
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
   }, [isDragging]);
 
   const handleClearChat = () => {
@@ -67,7 +71,7 @@ const ChatWidget = () => {
               {unreadCount}
             </span>
           )}
-          <span className="absolute right-20 bg-gray-900 text-white px-3 py-1 rounded-lg text-sm opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+          <span className="absolute right-20 bg-gray-900 text-white px-3 py-1 rounded-lg text-sm opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
             Chat with AI 🤖
           </span>
         </button>
@@ -76,23 +80,26 @@ const ChatWidget = () => {
       {/* Chat Popup */}
       {isOpen && (
         <div
-          className="fixed z-50"
-          style={{
+          className={`fixed z-50 ${isFullscreen ? 'inset-0' : ''}`}
+          style={!isFullscreen ? {
             left: `${position.x}px`,
             top: `${position.y}px`,
-            width: '380px',
-            height: isMinimized ? 'auto' : '600px'
-          }}
-          onMouseDown={handleMouseDown}
+            width: '450px',
+            height: isMinimized ? 'auto' : '700px'
+          } : {}}
         >
           <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col h-full border-2 border-purple-200">
             {/* Header */}
-            <div className="chat-header bg-gradient-to-r from-purple-600 to-blue-600 text-white p-4 cursor-move flex items-center justify-between">
+            <div 
+              className="drag-handle bg-gradient-to-r from-purple-600 to-blue-600 text-white p-4 cursor-move flex items-center justify-between"
+              onMouseDown={handleMouseDown}
+            >
               <div className="flex items-center gap-2">
+                <Move className="w-4 h-4 opacity-50" />
                 <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
                 <div>
                   <h3 className="font-bold text-lg">AI Movie Assistant</h3>
-                  <p className="text-xs text-purple-100">Always here to help 🎬</p>
+                  <p className="text-xs text-purple-100">Drag me anywhere! 🎬</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -104,14 +111,23 @@ const ChatWidget = () => {
                   <Trash2 className="w-4 h-4" />
                 </button>
                 <button
+                  onClick={() => setIsFullscreen(!isFullscreen)}
+                  className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
+                  title="Fullscreen"
+                >
+                  {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+                <button
                   onClick={() => setIsMinimized(!isMinimized)}
                   className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
+                  title="Minimize"
                 >
-                  {isMinimized ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
+                  <Minimize2 className="w-4 h-4" />
                 </button>
                 <button
                   onClick={toggleChat}
                   className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
+                  title="Close"
                 >
                   <X className="w-5 h-5" />
                 </button>

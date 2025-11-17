@@ -1,10 +1,9 @@
-import { Send, Bot, User, Sparkles, Film, Clock, Ticket, MapPin, CreditCard } from 'lucide-react';
+import { Send, Bot, User, Sparkles, Film, Clock, Ticket, CreditCard, Check } from 'lucide-react';
 import { useState, useRef, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { ChatContext } from '../context/ChatContext';
 import { AuthContext } from '../context/AuthContext';
-import SeatSelectorChat from './SeatSelectorChat';
 
 const ChatPopup = () => {
   const navigate = useNavigate();
@@ -12,9 +11,9 @@ const ChatPopup = () => {
   const { messages, addMessage } = useContext(ChatContext);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [bookingState, setBookingState] = useState(null);
+  const [selectedSeats, setSelectedSeats] = useState([]);
+  const [currentShowtime, setCurrentShowtime] = useState(null);
   const messagesEndRef = useRef(null);
-  const [playSound] = useState(true);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -25,7 +24,6 @@ const ChatPopup = () => {
   }, [messages]);
 
   useEffect(() => {
-    // Welcome message on first load
     if (messages.length === 0) {
       addMessage({
         role: 'assistant',
@@ -35,19 +33,11 @@ const ChatPopup = () => {
     }
   }, []);
 
-  const playNotificationSound = () => {
-    if (playSound) {
-      const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGH0fPTgjMGHm7A7+OZPQ0PVqnl8LNiHwU7k9n0zHgsBS1+zPLaizsIGGS56+qdTxELTKXh8bllHgU2jdT0yoA2Bxxuwe/jnT8NEFOR5O+3ZiEENY3U9MqBNQYabsDu5J0/DRJUkuXvvGkiAzSN1fXKgjQGGGu+7uacPxARU5Pk77dpIwM0jNX0yYM1BxpsvO7mnEARE1ST5e+8aScDNIvV9MqDNgcabL3u45w/DxFUlOTvvWkjAzWM1PTJgTcGHGq98OWaPREQVJXk779pJAM0i9T0yoE2Bhxqve/mmTwRE1KT5e+8aiQDNYzU9MqBNwYcKr7v5po9ERBUleTvvWomAzOM1PTKgTYGHGq+7+aZPBETUpLl7r1qJQM1i9X0yoM3BxxqvfDlmj0REFSx5e+9aiYDM43U9MqCNgYcbr7v5ZpA==');
-      audio.play().catch(() => {});
-    }
-  };
-
-  const sendMessage = async (messageText = null, skipInput = false) => {
+  const sendMessage = async (messageText = null) => {
     const userMessage = messageText || input.trim();
     if (!userMessage || isLoading) return;
 
-    if (!skipInput) setInput('');
-    
+    setInput('');
     addMessage({ role: 'user', content: userMessage, type: 'text' });
     setIsLoading(true);
 
@@ -58,22 +48,12 @@ const ChatPopup = () => {
         isLoggedIn: !!auth.user
       });
       
-      const aiMessage = {
+      addMessage({
         role: 'assistant',
         content: response.data.response,
         type: response.data.type || 'text',
         data: response.data.data || null
-      };
-      
-      addMessage(aiMessage);
-      playNotificationSound();
-
-      // Handle booking flow
-      if (response.data.type === 'showtime_selection') {
-        setBookingState({ step: 'showtime', data: response.data.data });
-      } else if (response.data.type === 'seat_selection') {
-        setBookingState({ step: 'seats', data: response.data.data });
-      }
+      });
       
     } catch (error) {
       console.error('Chat error:', error);
@@ -95,21 +75,47 @@ const ChatPopup = () => {
   };
 
   const handleShowtimeSelect = (showtime) => {
-    setBookingState({ step: 'seats', data: showtime });
+    setCurrentShowtime(showtime);
+    setSelectedSeats([]);
     addMessage({
       role: 'assistant',
-      content: `Great! Let's select seats for ${showtime.movieName} at ${new Date(showtime.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`,
+      content: `Perfect! Select your seats for "${showtime.movieName}" at ${new Date(showtime.time).toLocaleString('en-US', { 
+        weekday: 'short',
+        month: 'short', 
+        day: 'numeric',
+        hour: '2-digit', 
+        minute: '2-digit' 
+      })}`,
       type: 'seat_selection',
       data: showtime
     });
   };
 
-  const handleSeatConfirm = async (selectedSeats, showtimeId) => {
+  const handleSeatToggle = (seat) => {
+    if (selectedSeats.includes(seat)) {
+      setSelectedSeats(selectedSeats.filter(s => s !== seat));
+    } else {
+      if (selectedSeats.length < 10) {
+        setSelectedSeats([...selectedSeats, seat]);
+      }
+    }
+  };
+
+  const handleBookingConfirm = async () => {
     if (!auth.user) {
       addMessage({
         role: 'assistant',
-        content: '🔐 Please login to complete your booking!\n\nClick below to login:',
+        content: '🔐 Please login to complete your booking!',
         type: 'login_required'
+      });
+      return;
+    }
+
+    if (selectedSeats.length === 0) {
+      addMessage({
+        role: 'assistant',
+        content: '⚠️ Please select at least one seat!',
+        type: 'text'
       });
       return;
     }
@@ -117,23 +123,27 @@ const ChatPopup = () => {
     try {
       setIsLoading(true);
       
-      // Create order
       const orderResponse = await axios.post('/payment/create-order', {
-        showtimeId,
+        showtimeId: currentShowtime.showtimeId,
         seats: selectedSeats,
-        amount: selectedSeats.length * 200 // ₹200 per seat
+        amount: selectedSeats.length * 200
       }, {
         headers: { Authorization: `Bearer ${auth.token}` }
       });
 
       addMessage({
         role: 'assistant',
-        content: `✅ Booking confirmed!\n\n🎫 Seats: ${selectedSeats.join(', ')}\n💰 Amount: ₹${orderResponse.data.order.amount}\n\nClick below to complete payment:`,
+        content: `✅ Booking Created!\n\n🎬 Movie: ${currentShowtime.movieName}\n🪑 Seats: ${selectedSeats.join(', ')}\n💰 Amount: ₹${orderResponse.data.order.amount}\n\nComplete payment below:`,
         type: 'payment',
-        data: orderResponse.data.order
+        data: {
+          paymentId: orderResponse.data.order.paymentId,
+          amount: orderResponse.data.order.amount,
+          seats: selectedSeats
+        }
       });
 
-      setBookingState(null);
+      setCurrentShowtime(null);
+      setSelectedSeats([]);
     } catch (error) {
       addMessage({
         role: 'assistant',
@@ -146,36 +156,36 @@ const ChatPopup = () => {
   };
 
   const quickActions = [
-    { icon: <Film />, text: "Browse movies", color: "purple" },
-    { icon: <Ticket />, text: "Book ticket", color: "blue" },
-    { icon: <Clock />, text: "Showtimes", color: "indigo" },
-    { icon: <Sparkles />, text: "Recommend", color: "pink" }
+    { icon: <Film />, text: "Show all movies", query: "List all movies" },
+    { icon: <Ticket />, text: "Book a ticket", query: "Book a movie" },
+    { icon: <Clock />, text: "Check showtimes", query: "Show showtimes" },
+    { icon: <Sparkles />, text: "Recommend movie", query: "Recommend a movie" }
   ];
 
   const renderMessage = (msg, idx) => {
-    // Movie cards
+    // Movie List
     if (msg.type === 'movie_list' && msg.data) {
       return (
         <div key={idx} className="flex gap-2 mb-3">
-          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center mt-1">
             <Bot className="w-5 h-5 text-white" />
           </div>
           <div className="flex-1">
             <div className="bg-white p-3 rounded-2xl shadow-sm mb-2">
-              <p className="text-sm text-gray-800">{msg.content}</p>
+              <p className="text-sm text-gray-800 leading-relaxed">{msg.content}</p>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              {msg.data.slice(0, 4).map((movie, i) => (
+              {msg.data.slice(0, 6).map((movie, i) => (
                 <div 
                   key={i}
-                  className="bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer group"
-                  onClick={() => sendMessage(`Book ${movie.name}`, true)}
+                  className="bg-white rounded-lg overflow-hidden shadow-md hover:shadow-xl transition-all cursor-pointer group transform hover:scale-105"
+                  onClick={() => sendMessage(`Book ${movie.name}`)}
                 >
-                  <img src={movie.img} alt={movie.name} className="w-full h-24 object-cover" />
+                  <img src={movie.img} alt={movie.name} className="w-full h-28 object-cover" />
                   <div className="p-2">
-                    <p className="text-xs font-bold text-gray-800 truncate">{movie.name}</p>
-                    <p className="text-xs text-gray-600">{movie.length} min</p>
-                    <button className="text-xs text-purple-600 font-medium mt-1 group-hover:underline">
+                    <p className="text-xs font-bold text-gray-800 truncate" title={movie.name}>{movie.name}</p>
+                    <p className="text-xs text-gray-600 mb-1"><Clock className="w-3 h-3 inline mr-1" />{movie.length} min</p>
+                    <button className="text-xs bg-gradient-to-r from-purple-500 to-blue-500 text-white px-2 py-1 rounded-full font-medium w-full group-hover:from-purple-600 group-hover:to-blue-600">
                       Book Now →
                     </button>
                   </div>
@@ -187,11 +197,11 @@ const ChatPopup = () => {
       );
     }
 
-    // Showtime selection
+    // Showtime Selection
     if (msg.type === 'showtime_selection' && msg.data) {
       return (
         <div key={idx} className="flex gap-2 mb-3">
-          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center mt-1">
             <Bot className="w-5 h-5 text-white" />
           </div>
           <div className="flex-1">
@@ -203,16 +213,22 @@ const ChatPopup = () => {
                 <button
                   key={i}
                   onClick={() => handleShowtimeSelect(showtime)}
-                  className="w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white p-2 rounded-lg text-sm font-medium hover:from-purple-600 hover:to-blue-600 transition-all flex items-center justify-between"
+                  className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white p-3 rounded-lg text-sm font-medium hover:from-indigo-600 hover:to-purple-600 transition-all flex items-center justify-between shadow-md hover:shadow-lg"
                 >
-                  <span>🎬 {new Date(showtime.time).toLocaleString('en-US', { 
-                    weekday: 'short',
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}</span>
-                  <span className="text-xs">{showtime.theater}</span>
+                  <div className="text-left">
+                    <div className="font-bold">{new Date(showtime.time).toLocaleString('en-US', { 
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric'
+                    })}</div>
+                    <div className="text-xs opacity-90">{showtime.theater}</div>
+                  </div>
+                  <div className="text-lg font-bold">
+                    {new Date(showtime.time).toLocaleString('en-US', { 
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </div>
                 </button>
               ))}
             </div>
@@ -221,21 +237,102 @@ const ChatPopup = () => {
       );
     }
 
-    // Seat selection
+    // Seat Selection
     if (msg.type === 'seat_selection' && msg.data) {
+      const rows = ['A', 'B', 'C', 'D', 'E', 'F'];
+      const seatsPerRow = 10;
+
       return (
         <div key={idx} className="flex gap-2 mb-3">
-          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center mt-1">
             <Bot className="w-5 h-5 text-white" />
           </div>
           <div className="flex-1">
             <div className="bg-white p-3 rounded-2xl shadow-sm mb-2">
               <p className="text-sm text-gray-800">{msg.content}</p>
             </div>
-            <SeatSelectorChat 
-              showtimeData={msg.data}
-              onConfirm={handleSeatConfirm}
-            />
+            <div className="bg-white p-4 rounded-lg shadow-md">
+              {/* Screen */}
+              <div className="mb-3">
+                <div className="w-full h-3 bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 rounded-full mb-1"></div>
+                <p className="text-center text-xs text-gray-500 font-medium">🎬 SCREEN</p>
+              </div>
+
+              {/* Seats */}
+              <div className="space-y-1 mb-3">
+                {rows.map(row => (
+                  <div key={row} className="flex gap-1 items-center">
+                    <span className="text-xs font-bold text-gray-700 w-5">{row}</span>
+                    <div className="flex gap-1">
+                      {Array.from({ length: seatsPerRow }, (_, i) => {
+                        const seatNumber = i + 1;
+                        const seatId = `${row}${seatNumber}`;
+                        const isBooked = msg.data.bookedSeats?.includes(seatId);
+                        const isSelected = selectedSeats.includes(seatId);
+
+                        return (
+                          <button
+                            key={seatId}
+                            onClick={() => !isBooked && handleSeatToggle(seatId)}
+                            disabled={isBooked}
+                            className={`w-7 h-7 rounded text-xs font-bold transition-all ${
+                              isBooked
+                                ? 'bg-gray-400 cursor-not-allowed text-white'
+                                : isSelected
+                                ? 'bg-green-500 text-white scale-110 shadow-lg'
+                                : 'bg-blue-100 hover:bg-blue-200 text-blue-800'
+                            }`}
+                            title={seatId}
+                          >
+                            {isSelected ? <Check className="w-4 h-4 mx-auto" /> : seatNumber}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Legend */}
+              <div className="flex justify-center gap-3 text-xs mb-3 pb-3 border-b">
+                <div className="flex items-center gap-1">
+                  <div className="w-5 h-5 bg-blue-100 rounded"></div>
+                  <span className="text-gray-600">Available</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-5 h-5 bg-green-500 rounded"></div>
+                  <span className="text-gray-600">Selected</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-5 h-5 bg-gray-400 rounded"></div>
+                  <span className="text-gray-600">Booked</span>
+                </div>
+              </div>
+
+              {/* Summary */}
+              {selectedSeats.length > 0 && (
+                <div className="bg-gradient-to-r from-purple-50 to-blue-50 p-3 rounded-lg mb-2">
+                  <p className="text-sm font-bold text-gray-800 mb-1">
+                    Selected: <span className="text-purple-600">{selectedSeats.join(', ')}</span>
+                  </p>
+                  <p className="text-lg font-bold text-gray-900">
+                    Total: ₹{selectedSeats.length * 200}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    {selectedSeats.length} seat{selectedSeats.length > 1 ? 's' : ''} × ₹200 each
+                  </p>
+                </div>
+              )}
+
+              {/* Confirm Button */}
+              <button
+                onClick={handleBookingConfirm}
+                disabled={selectedSeats.length === 0 || isLoading}
+                className="w-full bg-gradient-to-r from-green-500 to-emerald-500 text-white py-3 rounded-lg font-bold hover:from-green-600 hover:to-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg text-sm"
+              >
+                {isLoading ? 'Processing...' : selectedSeats.length === 0 ? 'Select seats first' : `Confirm ${selectedSeats.length} Seat${selectedSeats.length > 1 ? 's' : ''} →`}
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -245,16 +342,16 @@ const ChatPopup = () => {
     if (msg.type === 'payment' && msg.data) {
       return (
         <div key={idx} className="flex gap-2 mb-3">
-          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center mt-1">
             <Bot className="w-5 h-5 text-white" />
           </div>
           <div className="flex-1">
             <div className="bg-white p-3 rounded-2xl shadow-sm mb-2">
-              <p className="text-sm text-gray-800 whitespace-pre-wrap">{msg.content}</p>
+              <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
             </div>
             <button
               onClick={() => navigate(`/purchase/${msg.data.paymentId}`)}
-              className="w-full bg-gradient-to-r from-green-500 to-emerald-500 text-white p-3 rounded-lg font-medium hover:from-green-600 hover:to-emerald-600 transition-all flex items-center justify-center gap-2"
+              className="w-full bg-gradient-to-r from-green-500 to-emerald-500 text-white p-4 rounded-lg font-bold hover:from-green-600 hover:to-emerald-600 transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
             >
               <CreditCard className="w-5 h-5" />
               Complete Payment ₹{msg.data.amount}
@@ -264,11 +361,11 @@ const ChatPopup = () => {
       );
     }
 
-    // Login required
+    // Login Required
     if (msg.type === 'login_required') {
       return (
         <div key={idx} className="flex gap-2 mb-3">
-          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center mt-1">
             <Bot className="w-5 h-5 text-white" />
           </div>
           <div className="flex-1">
@@ -276,8 +373,11 @@ const ChatPopup = () => {
               <p className="text-sm text-gray-800">{msg.content}</p>
             </div>
             <button
-              onClick={() => navigate('/login')}
-              className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white p-3 rounded-lg font-medium hover:from-indigo-600 hover:to-purple-600 transition-all"
+              onClick={() => {
+                toggleChat();
+                navigate('/login');
+              }}
+              className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white p-3 rounded-lg font-bold hover:from-indigo-600 hover:to-purple-600 transition-all shadow-md"
             >
               Login / Register
             </button>
@@ -286,10 +386,10 @@ const ChatPopup = () => {
       );
     }
 
-    // Regular text message
+    // Regular Message
     return (
       <div key={idx} className={`flex gap-2 mb-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-        <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+        <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center mt-1 ${
           msg.role === 'user' 
             ? 'bg-blue-500' 
             : 'bg-gradient-to-br from-purple-500 to-pink-500'
@@ -300,7 +400,7 @@ const ChatPopup = () => {
             <Bot className="w-5 h-5 text-white" />
           )}
         </div>
-        <div className={`flex-1 max-w-[260px] p-3 rounded-2xl shadow-sm ${
+        <div className={`flex-1 max-w-[320px] p-3 rounded-2xl shadow-sm ${
           msg.role === 'user'
             ? 'bg-blue-500 text-white'
             : 'bg-white text-gray-800'
@@ -317,14 +417,14 @@ const ChatPopup = () => {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-gradient-to-br from-purple-50 via-white to-blue-50">
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-3 bg-gradient-to-br from-purple-50 to-blue-50">
+      <div className="flex-1 overflow-y-auto p-4">
         {messages.map((msg, idx) => renderMessage(msg, idx))}
 
         {isLoading && (
           <div className="flex gap-2 mb-3">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center mt-1">
               <Bot className="w-5 h-5 text-white animate-bounce" />
             </div>
             <div className="bg-white p-3 rounded-2xl shadow-sm">
@@ -339,42 +439,42 @@ const ChatPopup = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Quick Actions */}
-      {messages.length <= 1 && (
-        <div className="p-2 bg-white border-t">
-          <p className="text-xs text-gray-500 mb-2">Quick actions:</p>
-          <div className="grid grid-cols-2 gap-2">
-            {quickActions.map((action, idx) => (
-              <button
-                key={idx}
-                onClick={() => sendMessage(action.text)}
-                className="flex items-center gap-1 px-2 py-1.5 bg-gradient-to-r from-purple-50 to-blue-50 text-purple-700 rounded-lg text-xs font-medium hover:from-purple-100 hover:to-blue-100 transition-all"
-              >
-                {action.icon}
-                <span className="text-xs">{action.text}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Floating Quick Actions */}
+      <div className="absolute top-16 right-4 space-y-2">
+        {quickActions.map((action, idx) => (
+          <button
+            key={idx}
+            onClick={() => sendMessage(action.query)}
+            className="bg-white hover:bg-purple-50 p-3 rounded-full shadow-lg hover:shadow-xl transition-all group flex items-center gap-2 pr-0 overflow-hidden max-w-[48px] hover:max-w-[200px]"
+            title={action.text}
+          >
+            <div className="text-purple-600 flex-shrink-0">
+              {action.icon}
+            </div>
+            <span className="text-sm font-medium text-gray-700 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pr-3">
+              {action.text}
+            </span>
+          </button>
+        ))}
+      </div>
 
       {/* Input */}
-      <div className="p-3 bg-white border-t flex gap-2">
+      <div className="p-4 bg-white border-t border-gray-200 flex gap-2">
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyPress={handleKeyPress}
           placeholder="Type your message..."
-          className="flex-1 px-3 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+          className="flex-1 px-4 py-3 border-2 border-purple-200 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm bg-gray-50"
           disabled={isLoading}
         />
         <button
           onClick={() => sendMessage()}
           disabled={isLoading || !input.trim()}
-          className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-full hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 transition-all"
+          className="px-5 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-full hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
         >
-          <Send className="w-4 h-4" />
+          <Send className="w-5 h-5" />
         </button>
       </div>
     </div>
