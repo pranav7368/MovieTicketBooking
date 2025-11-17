@@ -15,6 +15,8 @@ const theater = require('./routes/theater');
 const movie = require('./routes/movie');
 const showtime = require('./routes/showtime');
 const payment = require('./routes/payment'); // ✅ NEW: Payment route
+const chat = require('./routes/chat'); // ✅ NEW: Chat route
+
 
 // -------------------------------
 // CONNECT TO MONGODB ATLAS
@@ -49,6 +51,8 @@ app.use('/theater', theater);
 app.use('/movie', movie);
 app.use('/showtime', showtime);
 app.use('/payment', payment); // ✅ NEW: Payment route added
+app.use('/api/chat', chat); // ✅ NEW: Chat route added
+
 
 // -------------------------------
 // START SERVER

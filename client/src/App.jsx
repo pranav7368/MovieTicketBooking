@@ -13,6 +13,7 @@ import Search from './pages/Search'
 import Showtime from './pages/Showtime'
 import Tickets from './pages/Tickets'
 import User from './pages/User'
+import Chat from './pages/Chat' 
 
 axios.defaults.baseURL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000'
 axios.defaults.withCredentials = true
@@ -23,6 +24,7 @@ function App() {
 			<ToastContainer />
 			<Routes>
 				<Route path="/" element={<Home />} />
+				<Route path="/chat" element={<Chat />} />
 				<Route path="/login" element={<Login />} />
 				<Route path="/register" element={<Register />} />
 				<Route path="/cinema" element={<Cinema />} />
